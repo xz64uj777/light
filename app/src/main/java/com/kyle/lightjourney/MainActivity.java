@@ -334,7 +334,7 @@ public class MainActivity extends Activity {
         }
 
         void kaleido(float t,float beat){
-            for(int k=0;k<12;k++){int n=64;float[] a=new float[n*6];float base=k*Math.PI/6+t*.25;
+            for(int k=0;k<12;k++){int n=64;float[] a=new float[n*6];float base=(float)(k*Math.PI/6+t*.25);
                 for(int i=0;i<n;i++){float q=i/(float)n, r=.08f+q*.95f*(1+beat*.25f), ang=base+q*2.8f+t*.4f;
                     put(a,i,(float)Math.cos(ang)*r,(float)Math.sin(ang)*r*.72f,.2f+q*.5f,.3f+.6f*q,.15f+.75f*high,1);}
                 draw(a,android.opengl.GLES20.GL_LINE_STRIP,n);
