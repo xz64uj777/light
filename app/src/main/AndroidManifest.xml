@@ -10,6 +10,7 @@
         android:supportsRtl="true"
         android:theme="@style/AppTheme"
         android:hardwareAccelerated="true">
+        <service android:name=".PlayerService" android:exported="false" android:foregroundServiceType="mediaPlayback"/>
         <activity
             android:name=".MainActivity"
             android:exported="true"
