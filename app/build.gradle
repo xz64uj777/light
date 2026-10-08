@@ -7,11 +7,11 @@ android {
     compileSdk 35
 
     defaultConfig {
-        applicationId 'com.kyle.lightjourney'
+        applicationId 'com.kyle.musiclightfresh'
         minSdk 26
         targetSdk 35
-        versionCode 5
-        versionName '0.5.0'
+        versionCode 1
+        versionName '1.0.0'
     }
 
     buildTypes {
