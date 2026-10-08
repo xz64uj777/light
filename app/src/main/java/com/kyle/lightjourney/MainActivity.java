@@ -4,7 +4,7 @@ import android.app.*;import android.content.*;import android.graphics.Color;impo
 
 public class MainActivity extends Activity{
  static final int PICK=42; Handler h=new Handler(Looper.getMainLooper()); MediaPlayer mp; Visualizer av; VizView viz; LinearLayout panel; TextView song,time; SeekBar seek; Button play;
- Runnable clock=()->{if(mp!=null){seek.setMax(Math.max(1,mp.getDuration()));seek.setProgress(mp.getCurrentPosition());time.setText(fmt(mp.getCurrentPosition())+" / "+fmt(mp.getDuration()));}h.postDelayed(clock,250);};
+ Runnable clock=new Runnable(){public void run(){if(mp!=null){seek.setMax(Math.max(1,mp.getDuration()));seek.setProgress(mp.getCurrentPosition());time.setText(fmt(mp.getCurrentPosition())+" / "+fmt(mp.getDuration()));}h.postDelayed(this,250);}};
  @Override public void onCreate(Bundle b){super.onCreate(b);getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);build();h.post(clock);}
  void build(){FrameLayout root=new FrameLayout(this);viz=new VizView(this);root.addView(viz,new FrameLayout.LayoutParams(-1,-1));
   panel=new LinearLayout(this);panel.setOrientation(LinearLayout.VERTICAL);panel.setPadding(d(16),d(12),d(16),d(14));panel.setBackgroundColor(0xD9000008);
