@@ -1,24 +1,21 @@
-# Light Journey
+# Music Light
 
-A small Android experiment for eyes-closed light and sound sessions.
+A native Android music player inspired by the spirit of Winamp, built around a full-screen 3D audio-reactive light show.
 
-## Initial build
+## What is in this build
 
-- Native Android app
-- Smooth full-screen color/brightness modulation
-- Pulse rate limited to 0.1–1.0 Hz
-- Intensity control limited to 20–70%
-- 3, 5, or 10 minute sessions
-- Optional soft ambient audio generated on-device
-- Persistent STOP button and automatic stop when the app leaves the foreground
-- Safety acknowledgement before entering the controls
-- No camera-flash/torch strobing
-- No network or special permissions
+- Pick local music with the Android document picker.
+- Play/pause and seek through the track.
+- Live FFT/waveform analysis drives bass, mids, treble, particles, rings and the central pulse.
+- Full-screen visualizer mode hides the player controls.
+- Perspective particle tunnel, concentric 3D-style rings, equalizer floor and pulsing wire sphere.
+- Native OpenGL ES 2.0 rendering; no web page or sandbox.
+- Works offline with the selected local audio.
+
+## Direction
+
+The next pass can add the classic Winamp feel: playlists, album art, track queue, previous/next, shuffle/repeat, presets, visualizer skins, sensitivity/smoothing controls, lock-screen/media controls, and a richer multi-scene 3D engine.
 
 ## Safety
 
-Bright or rhythmic light can cause discomfort, migraine, dizziness, nausea, or seizures in susceptible people. Do not use while driving, walking, standing, bathing, or near stairs. Stop immediately if you feel unwell. People with seizure disorders, photosensitivity, unexplained blackouts, or medical advice to avoid flashing light should not use this app.
-
-## APK
-
-GitHub Actions builds `app-debug.apk` automatically from `main` and publishes it as the `Light-Journey-debug-apk` workflow artifact.
+Rapid or intense visual effects can be uncomfortable for some people. The visualizer should be used at a comfortable brightness and stopped if it causes discomfort.
