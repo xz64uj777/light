@@ -33,24 +33,36 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Build debug APK
-        run: gradle --no-daemon --stacktrace clean assembleDebug
+      - name: Build clean release APK
+        run: gradle --no-daemon --stacktrace clean assembleRelease
 
-      - name: Verify APK package and signature
+      - name: Align, sign, and verify installable APK
+        env:
+          KEYSTORE_PASSWORD: musiclight-ci-password
+          KEY_PASSWORD: musiclight-ci-password
         run: |
-          APK=app/build/outputs/apk/debug/app-debug.apk
+          set -euxo pipefail
+          SDK_BUILD_TOOLS="$ANDROID_HOME/build-tools/35.0.0"
+          UNSIGNED=app/build/outputs/apk/release/app-release-unsigned.apk
+          ALIGNED=app-release-aligned.apk
+          APK=Music-Light-v0.5.0.apk
+
+          test -s "$UNSIGNED"
+          "$SDK_BUILD_TOOLS/zipalign" -p -f 4 "$UNSIGNED" "$ALIGNED"
+
+          keytool -genkeypair -v             -keystore music-light-ci.jks             -storepass "$KEYSTORE_PASSWORD"             -keypass "$KEY_PASSWORD"             -alias musiclight             -keyalg RSA             -keysize 2048             -validity 10000             -dname "CN=Music Light CI, OU=Android, O=Music Light, L=Build, ST=Build, C=US"
+
+          "$SDK_BUILD_TOOLS/apksigner" sign             --ks music-light-ci.jks             --ks-pass pass:"$KEYSTORE_PASSWORD"             --key-pass pass:"$KEY_PASSWORD"             --out "$APK"             "$ALIGNED"
+
+          "$SDK_BUILD_TOOLS/apksigner" verify --verbose --print-certs "$APK"
+          "$SDK_BUILD_TOOLS/aapt2" dump badging "$APK" | sed -n '1,10p'
           test -s "$APK"
           ls -lh "$APK"
           file "$APK"
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$APK"
-          "$ANDROID_HOME/build-tools/35.0.0/aapt2" dump badging "$APK" | sed -n '1,8p'
-          mkdir -p dist
-          cp "$APK" dist/Music-Light-v0.4.0-debug.apk
-          ls -lh dist/Music-Light-v0.4.0-debug.apk
 
-      - name: Upload APK
+      - name: Upload installable APK
         uses: actions/upload-artifact@v4
         with:
-          name: Music-Light-v0.4.0-debug
-          path: dist/Music-Light-v0.4.0-debug.apk
+          name: Music-Light-v0.5.0-installable
+          path: Music-Light-v0.5.0.apk
           if-no-files-found: error
