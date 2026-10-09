@@ -1,10 +1,12 @@
 package com.kyle.lightjourney;
 
 import android.app.*;
+import android.Manifest;
 import android.content.*;
 import android.database.Cursor;
 import android.graphics.Color;
 import android.media.MediaPlayer;
+import android.media.projection.MediaProjectionManager;
 import android.media.audiofx.Visualizer;
 import android.media.session.MediaController;
 import android.media.session.MediaSessionManager;
@@ -20,6 +22,11 @@ import java.util.*;
 
 public class MainActivity extends Activity {
     static final int PICK = 42;
+    static final int REQ_PANDORA_CAPTURE = 7102;
+    static final int REQ_RECORD_AUDIO = 7103;
+    public static volatile boolean captureActive = false, captureHasAudio = false;
+    public static volatile float captureBass = 0, captureMid = 0, captureHigh = 0, captureRms = 0;
+    public static volatile String captureStatus = "Audio link inactive";
     final Handler h = new Handler(Looper.getMainLooper());
     final ArrayList<Uri> queue = new ArrayList<>();
     MediaPlayer mp;
@@ -28,7 +35,7 @@ public class MainActivity extends Activity {
     LinearLayout panel;
     TextView song, time, queueInfo;
     SeekBar seek;
-    Button play, shuffle, repeat, preset, pandora;
+    Button play, shuffle, repeat, preset, pandora, stopLink;
     boolean pandoraMode = false, externalPlaying = false;
     long lastSessionCheck = 0;
     int current = -1;
@@ -50,6 +57,7 @@ public class MainActivity extends Activity {
     @Override public void onCreate(Bundle b) {
         super.onCreate(b);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        pandoraMode = getPreferences(MODE_PRIVATE).getBoolean("pandora_mode", false);
         build();
         h.post(clock);
     }
@@ -102,17 +110,24 @@ public class MainActivity extends Activity {
         LinearLayout row3 = new LinearLayout(this);
         row3.setGravity(Gravity.CENTER);
         pandora = btn("CONNECT PANDORA");
-        row3.addView(pandora, new LinearLayout.LayoutParams(-1, d(42)));
+        stopLink = btn("STOP AUDIO LINK");
+        row3.addView(pandora, lp());
+        row3.addView(stopLink, lp());
         panel.addView(row3);
-        pandora.setOnClickListener(v -> {
-            pandoraMode = true;
-            if (!notificationAccessEnabled()) {
-                try { startActivity(new Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)); }
-                catch (Exception e) { song.setText("Open Android Notification Access settings"); }
-            } else {
-                refreshPandora();
-                song.setText("PANDORA MODE • Start music in Pandora");
-            }
+        stopLink.setEnabled(captureActive);
+        pandora.setOnClickListener(v -> connectPandora());
+        stopLink.setOnClickListener(v -> {
+            stopService(new Intent(this, PandoraCaptureService.class));
+            captureActive = false;
+            captureHasAudio = false;
+            captureStatus = "Audio link stopped";
+            externalPlaying = false;
+            pandoraMode = false;
+            getPreferences(MODE_PRIVATE).edit().putBoolean("pandora_mode", false).apply();
+            viz.r.setExternalPlayback(false);
+            song.setText("Pandora audio link stopped");
+            pandora.setText("CONNECT PANDORA");
+            stopLink.setEnabled(false);
         });
 
         open.setOnClickListener(v -> pick());
@@ -143,7 +158,78 @@ public class MainActivity extends Activity {
 
     @Override protected void onResume() {
         super.onResume();
+        if (viz != null) viz.onResume();
         if (pandoraMode) refreshPandora();
+    }
+
+    @Override protected void onPause() {
+        if (viz != null) viz.onPause();
+        super.onPause();
+    }
+
+    void connectPandora() {
+        pandoraMode = true;
+        getPreferences(MODE_PRIVATE).edit().putBoolean("pandora_mode", true).apply();
+        if (!notificationAccessEnabled()) {
+            song.setText("Step 1: allow Music Light Pandora in Notification Access, then return and tap CONNECT PANDORA again.");
+            pandora.setText("ENABLE MEDIA ACCESS");
+            try { startActivity(new Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)); }
+            catch (Exception e) { song.setText("Open Android Settings → Notification access and enable Music Light Pandora."); }
+            return;
+        }
+        if (Build.VERSION.SDK_INT >= 29 && !captureActive) {
+            if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                song.setText("Allow microphone/audio permission so Android can offer music playback capture. No audio is uploaded.");
+                requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, REQ_RECORD_AUDIO);
+            } else {
+                requestAudioCaptureConsent();
+            }
+            return;
+        }
+        openPandora();
+    }
+
+    void requestAudioCaptureConsent() {
+        try {
+            MediaProjectionManager mgr = (MediaProjectionManager) getSystemService(MEDIA_PROJECTION_SERVICE);
+            song.setText("Approve Android's capture prompt to let Music Light react to Pandora audio. Android may block capture for some protected streams.");
+            startActivityForResult(mgr.createScreenCaptureIntent(), REQ_PANDORA_CAPTURE);
+        } catch (Exception e) {
+            captureStatus = "Android audio capture is unavailable";
+            song.setText("Audio capture is unavailable. Opening Pandora in status-only mode.");
+            openPandora();
+        }
+    }
+
+    void openPandora() {
+        Intent launch = getPackageManager().getLaunchIntentForPackage("com.pandora.android");
+        if (launch == null) {
+            song.setText("Pandora app was not found. Install/open Pandora first, then tap CONNECT PANDORA again.");
+            pandora.setText("PANDORA APP NOT FOUND");
+            return;
+        }
+        launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        try {
+            startActivity(launch);
+            pandora.setText(captureActive ? "AUDIO LINK ACTIVE" : "PANDORA OPENED • RETURN HERE");
+            song.setText(captureActive ? "Pandora opened. Start a station, then return here; audio link: " + captureStatus
+                    : "Pandora opened. Start a station, then return to Music Light.");
+        } catch (Exception e) {
+            song.setText("Could not open Pandora. Launch Pandora manually, start a station, then return here.");
+        }
+    }
+
+    @Override public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == REQ_RECORD_AUDIO) {
+            if (grantResults.length > 0 && grantResults[0] == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                requestAudioCaptureConsent();
+            } else {
+                captureStatus = "Audio capture permission declined";
+                song.setText("Audio permission declined. Connecting in status-only mode; Pandora may not drive the lightshow.");
+                openPandora();
+            }
+        }
     }
 
     boolean notificationAccessEnabled() {
@@ -153,8 +239,13 @@ public class MainActivity extends Activity {
 
     void refreshPandora() {
         lastSessionCheck = SystemClock.uptimeMillis();
-        if (!pandoraMode || !notificationAccessEnabled()) {
-            if (pandora != null) pandora.setText("CONNECT PANDORA");
+        if (stopLink != null) stopLink.setEnabled(captureActive);
+        if (!pandoraMode) {
+            if (pandora != null) pandora.setText(captureActive ? "AUDIO LINK ACTIVE" : "CONNECT PANDORA");
+            return;
+        }
+        if (!notificationAccessEnabled()) {
+            if (pandora != null) pandora.setText("ENABLE MEDIA ACCESS");
             externalPlaying = false;
             viz.r.setExternalPlayback(false);
             return;
@@ -173,7 +264,7 @@ public class MainActivity extends Activity {
                     PlaybackState state = mc.getPlaybackState();
                     externalPlaying = state != null && state.getState() == PlaybackState.STATE_PLAYING;
                     viz.r.setExternalPlayback(externalPlaying);
-                    pandora.setText(externalPlaying ? "PANDORA PLAYING" : "PANDORA CONNECTED");
+                    pandora.setText(externalPlaying ? (captureActive ? "PANDORA PLAYING • AUDIO LINK" : "PANDORA PLAYING") : "PANDORA CONNECTED");
                     if (mp == null || !mp.isPlaying()) {
                         if (title != null && !title.isEmpty()) {
                             song.setText("♫ " + title + (artist == null || artist.isEmpty() ? "" : " — " + artist));
@@ -187,8 +278,8 @@ public class MainActivity extends Activity {
             if (!found) {
                 externalPlaying = false;
                 viz.r.setExternalPlayback(false);
-                pandora.setText("PANDORA READY • OPEN PANDORA");
-                if (mp == null) song.setText("Start a station in Pandora");
+                pandora.setText(captureActive ? "AUDIO LINK ON • OPEN PANDORA" : "OPEN PANDORA • NO SESSION");
+                if (mp == null) song.setText(captureActive ? "Audio link ready. Start a Pandora station, then return here. " + captureStatus : "No Pandora media session found. Tap CONNECT PANDORA to open Pandora.");
             }
         } catch (SecurityException e) {
             externalPlaying = false;
@@ -211,6 +302,30 @@ public class MainActivity extends Activity {
 
     @Override protected void onActivityResult(int r, int c, Intent x) {
         super.onActivityResult(r, c, x);
+        if (r == REQ_PANDORA_CAPTURE) {
+            if (c == RESULT_OK && x != null) {
+                Intent service = new Intent(this, PandoraCaptureService.class);
+                service.putExtra(PandoraCaptureService.EXTRA_RESULT_CODE, c);
+                service.putExtra(PandoraCaptureService.EXTRA_PROJECTION_DATA, x);
+                try {
+                    if (Build.VERSION.SDK_INT >= 26) startForegroundService(service);
+                    else startService(service);
+                    captureStatus = "Starting Android playback capture";
+                    pandora.setText("AUDIO LINK STARTING");
+                    song.setText("Audio link starting. Pandora will open next.");
+                    openPandora();
+                } catch (Exception e) {
+                    captureStatus = "Could not start audio capture";
+                    song.setText("Android could not start audio capture. Opening Pandora in status-only mode.");
+                    openPandora();
+                }
+            } else {
+                captureStatus = "Playback capture was declined";
+                song.setText("Capture declined. Opening Pandora in status-only mode; animations may not follow the beat.");
+                openPandora();
+            }
+            return;
+        }
         if (r != PICK || c != RESULT_OK || x == null) return;
         ArrayList<Uri> added = new ArrayList<>();
         if (x.getClipData() != null) {
@@ -389,7 +504,9 @@ public class MainActivity extends Activity {
         public void onSurfaceChanged(javax.microedition.khronos.opengles.GL10 g,int w,int h){android.opengl.GLES20.glViewport(0,0,w,h);}
         public void onDrawFrame(javax.microedition.khronos.opengles.GL10 g){
             float t=(System.nanoTime()-start)/1e9f;
-            if (externalPlayback) {
+            if (captureActive && captureHasAudio) {
+                bass = captureBass; mid = captureMid; high = captureHigh;
+            } else if (externalPlayback || captureActive) {
                 bass = .16f + .24f * ((float)Math.sin(t * 4.4f) + 1f) * .5f;
                 mid = .12f + .20f * ((float)Math.sin(t * 2.7f + 1.2f) + 1f) * .5f;
                 high = .10f + .28f * ((float)Math.sin(t * 7.1f + .6f) + 1f) * .5f;
