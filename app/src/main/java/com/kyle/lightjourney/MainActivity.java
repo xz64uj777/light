@@ -6,10 +6,15 @@ import android.database.Cursor;
 import android.graphics.Color;
 import android.media.MediaPlayer;
 import android.media.audiofx.Visualizer;
+import android.media.session.MediaController;
+import android.media.session.MediaSessionManager;
+import android.media.session.PlaybackState;
+import android.provider.Settings;
 import android.net.Uri;
 import android.os.*;
 import android.provider.OpenableColumns;
 import android.view.*;
+import android.content.ComponentName;
 import android.widget.*;
 import java.util.*;
 
@@ -23,13 +28,16 @@ public class MainActivity extends Activity {
     LinearLayout panel;
     TextView song, time, queueInfo;
     SeekBar seek;
-    Button play, shuffle, repeat, preset;
+    Button play, shuffle, repeat, preset, pandora;
+    boolean pandoraMode = false, externalPlaying = false;
+    long lastSessionCheck = 0;
     int current = -1;
     boolean shuffleOn = false, repeatOn = false;
     int presetId = 0;
 
     final Runnable clock = new Runnable() {
         public void run() {
+            if (SystemClock.uptimeMillis() - lastSessionCheck > 1500) refreshPandora();
             if (mp != null) {
                 seek.setMax(Math.max(1, mp.getDuration()));
                 seek.setProgress(mp.getCurrentPosition());
@@ -91,6 +99,22 @@ public class MainActivity extends Activity {
         row2.addView(shuffle, lp()); row2.addView(repeat, lp()); row2.addView(preset, lp()); row2.addView(full, lp());
         panel.addView(row2);
 
+        LinearLayout row3 = new LinearLayout(this);
+        row3.setGravity(Gravity.CENTER);
+        pandora = btn("CONNECT PANDORA");
+        row3.addView(pandora, new LinearLayout.LayoutParams(-1, d(42)));
+        panel.addView(row3);
+        pandora.setOnClickListener(v -> {
+            pandoraMode = true;
+            if (!notificationAccessEnabled()) {
+                try { startActivity(new Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)); }
+                catch (Exception e) { song.setText("Open Android Notification Access settings"); }
+            } else {
+                refreshPandora();
+                song.setText("PANDORA MODE • Start music in Pandora");
+            }
+        });
+
         open.setOnClickListener(v -> pick());
         prev.setOnClickListener(v -> previous());
         next.setOnClickListener(v -> next(false));
@@ -115,6 +139,66 @@ public class MainActivity extends Activity {
         tp.topMargin = d(12);
         root.addView(tag, tp);
         setContentView(root);
+    }
+
+    @Override protected void onResume() {
+        super.onResume();
+        if (pandoraMode) refreshPandora();
+    }
+
+    boolean notificationAccessEnabled() {
+        String enabled = Settings.Secure.getString(getContentResolver(), "enabled_notification_listeners");
+        return enabled != null && enabled.contains(getPackageName());
+    }
+
+    void refreshPandora() {
+        lastSessionCheck = SystemClock.uptimeMillis();
+        if (!pandoraMode || !notificationAccessEnabled()) {
+            if (pandora != null) pandora.setText("CONNECT PANDORA");
+            externalPlaying = false;
+            viz.r.setExternalPlayback(false);
+            return;
+        }
+        try {
+            MediaSessionManager manager = (MediaSessionManager) getSystemService(MEDIA_SESSION_SERVICE);
+            List<MediaController> sessions = manager.getActiveSessions(new ComponentName(this, PandoraListener.class));
+            boolean found = false;
+            for (MediaController mc : sessions) {
+                String pkg = mc.getPackageName() == null ? "" : mc.getPackageName().toLowerCase(Locale.US);
+                if (pkg.contains("pandora")) {
+                    found = true;
+                    android.media.MediaMetadata md = mc.getMetadata();
+                    String title = md == null ? null : md.getString(android.media.MediaMetadata.METADATA_KEY_TITLE);
+                    String artist = md == null ? null : md.getString(android.media.MediaMetadata.METADATA_KEY_ARTIST);
+                    PlaybackState state = mc.getPlaybackState();
+                    externalPlaying = state != null && state.getState() == PlaybackState.STATE_PLAYING;
+                    viz.r.setExternalPlayback(externalPlaying);
+                    pandora.setText(externalPlaying ? "PANDORA PLAYING" : "PANDORA CONNECTED");
+                    if (mp == null || !mp.isPlaying()) {
+                        if (title != null && !title.isEmpty()) {
+                            song.setText("♫ " + title + (artist == null || artist.isEmpty() ? "" : " — " + artist));
+                        } else {
+                            song.setText(externalPlaying ? "Pandora is playing" : "Pandora is paused");
+                        }
+                    }
+                    break;
+                }
+            }
+            if (!found) {
+                externalPlaying = false;
+                viz.r.setExternalPlayback(false);
+                pandora.setText("PANDORA READY • OPEN PANDORA");
+                if (mp == null) song.setText("Start a station in Pandora");
+            }
+        } catch (SecurityException e) {
+            externalPlaying = false;
+            viz.r.setExternalPlayback(false);
+            pandora.setText("GRANT NOTIFICATION ACCESS");
+        } catch (Exception e) {
+            externalPlaying = false;
+            viz.r.setExternalPlayback(false);
+            pandora.setText("PANDORA NOT DETECTED");
+        }
     }
 
     void pick() {
@@ -263,10 +347,12 @@ public class MainActivity extends Activity {
 
     static class RenderEngine implements android.opengl.GLSurfaceView.Renderer {
         float bass, mid, high, energy; long start; int prog, pos, col, preset = 0;
+        boolean externalPlayback = false;
         boolean audioAvailable = true;
         final Random random = new Random(7);
 
         void setPreset(int p) { preset = p; }
+        void setExternalPlayback(boolean playing) { externalPlayback = playing; }
         void setAudioAvailable(boolean ok) { audioAvailable = ok; }
         void reset() { bass = mid = high = energy = 0; }
 
@@ -303,6 +389,11 @@ public class MainActivity extends Activity {
         public void onSurfaceChanged(javax.microedition.khronos.opengles.GL10 g,int w,int h){android.opengl.GLES20.glViewport(0,0,w,h);}
         public void onDrawFrame(javax.microedition.khronos.opengles.GL10 g){
             float t=(System.nanoTime()-start)/1e9f;
+            if (externalPlayback) {
+                bass = .16f + .24f * ((float)Math.sin(t * 4.4f) + 1f) * .5f;
+                mid = .12f + .20f * ((float)Math.sin(t * 2.7f + 1.2f) + 1f) * .5f;
+                high = .10f + .28f * ((float)Math.sin(t * 7.1f + .6f) + 1f) * .5f;
+            }
             float beat=Math.min(1,bass*2.8f);
             android.opengl.GLES20.glClearColor(.003f+.028f*high,.002f+.02f*mid,.012f+.055f*bass,1);
             android.opengl.GLES20.glClear(android.opengl.GLES20.GL_COLOR_BUFFER_BIT);
