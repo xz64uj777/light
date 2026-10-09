@@ -45,7 +45,7 @@ jobs:
           SDK_BUILD_TOOLS="$ANDROID_HOME/build-tools/35.0.0"
           UNSIGNED=app/build/outputs/apk/release/app-release-unsigned.apk
           ALIGNED=app-release-aligned.apk
-          APK=Music-Light-v0.5.0.apk
+          APK=Music-Light-Pandora-v1.1.0.apk
 
           test -s "$UNSIGNED"
           "$SDK_BUILD_TOOLS/zipalign" -p -f 4 "$UNSIGNED" "$ALIGNED"
@@ -63,6 +63,6 @@ jobs:
       - name: Upload installable APK
         uses: actions/upload-artifact@v4
         with:
-          name: Music-Light-v0.5.0-installable
-          path: Music-Light-v0.5.0.apk
+          name: Music-Light-Pandora-v1.1.0-installable
+          path: Music-Light-Pandora-v1.1.0.apk
           if-no-files-found: error
