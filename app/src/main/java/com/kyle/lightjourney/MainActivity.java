@@ -188,14 +188,26 @@ public class MainActivity extends Activity {
             preset.setText("SCENE " + (presetId + 1));
             viz.r.setPreset(presetId);
         });
-        full.setOnClickListener(v -> panel.setVisibility(panel.getVisibility() == View.VISIBLE ? View.GONE : View.VISIBLE));
+        Button showControls = btn("SHOW CONTROLS");
+        FrameLayout.LayoutParams showLp = new FrameLayout.LayoutParams(d(150), d(42), Gravity.TOP | Gravity.END);
+        showLp.setMargins(0, d(54), d(12), 0);
+        root.addView(showControls, showLp);
+        showControls.setVisibility(View.GONE);
+        full.setOnClickListener(v -> {
+            controlScroll.setVisibility(View.GONE);
+            showControls.setVisibility(View.VISIBLE);
+        });
+        showControls.setOnClickListener(v -> {
+            controlScroll.setVisibility(View.VISIBLE);
+            showControls.setVisibility(View.GONE);
+        });
 
         controlScroll = new ScrollView(this);
         controlScroll.setFillViewport(false);
         controlScroll.setClipToPadding(false);
         controlScroll.setVerticalScrollBarEnabled(false);
         controlScroll.addView(panel, new ScrollView.LayoutParams(-1, -2));
-        FrameLayout.LayoutParams pp = new FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM);
+        FrameLayout.LayoutParams pp = new FrameLayout.LayoutParams(-1, Math.round(getResources().getDisplayMetrics().heightPixels * 0.48f), Gravity.BOTTOM);
         pp.setMargins(d(6), 0, d(6), d(12));
         controlScroll.setBackgroundColor(Color.TRANSPARENT);
         root.addView(controlScroll, pp);
@@ -203,7 +215,7 @@ public class MainActivity extends Activity {
             FrameLayout.LayoutParams p = (FrameLayout.LayoutParams) controlScroll.getLayoutParams();
             p.bottomMargin = Math.max(d(12), insets.getSystemWindowInsetBottom() + d(8));
             controlScroll.setLayoutParams(p);
-            return view.onApplyWindowInsets(insets);
+            return insets;
         });
 
         TextView tag = t("LIVE • 3D AUDIO REACTIVE", 11, 0xffeeeeff);
@@ -575,13 +587,12 @@ public class MainActivity extends Activity {
                 mid = .12f + .20f * ((float)Math.sin(t * 2.7f + 1.2f) + 1f) * .5f;
                 high = .10f + .28f * ((float)Math.sin(t * 7.1f + .6f) + 1f) * .5f;
             }
-            bass = Math.min(1f, bass * intensity); mid = Math.min(1f, mid * intensity); high = Math.min(1f, high * intensity);
-            float beat=Math.min(1,bass*2.8f);
-            if (palette == 0) android.opengl.GLES20.glClearColor(.003f+.028f*high,.002f+.02f*mid,.012f+.055f*bass,1);
-            else if (palette == 1) android.opengl.GLES20.glClearColor(.002f+.015f*high,.01f+.035f*mid,.025f+.07f*bass,1);
-            else if (palette == 2) android.opengl.GLES20.glClearColor(.04f+.07f*bass,.005f+.018f*mid,.001f+.012f*high,1);
-            else if (palette == 3) android.opengl.GLES20.glClearColor(.001f+.012f*high,.02f+.06f*bass,.002f+.025f*mid,1);
-            else android.opengl.GLES20.glClearColor(.02f+.045f*high,.002f+.012f*mid,.035f+.07f*bass,1);
+            float beat=Math.min(1,bass*2.8f*intensity);
+            if (palette == 0) android.opengl.GLES20.glClearColor(.003f+.028f*high*intensity,.002f+.02f*mid*intensity,.012f+.055f*bass*intensity,1);
+            else if (palette == 1) android.opengl.GLES20.glClearColor(.002f+.015f*high*intensity,.01f+.035f*mid*intensity,.025f+.07f*bass*intensity,1);
+            else if (palette == 2) android.opengl.GLES20.glClearColor(.04f+.07f*bass*intensity,.005f+.018f*mid*intensity,.001f+.012f*high*intensity,1);
+            else if (palette == 3) android.opengl.GLES20.glClearColor(.001f+.012f*high*intensity,.02f+.06f*bass*intensity,.002f+.025f*mid*intensity,1);
+            else android.opengl.GLES20.glClearColor(.02f+.045f*high*intensity,.002f+.012f*mid*intensity,.035f+.07f*bass*intensity,1);
             android.opengl.GLES20.glClear(android.opengl.GLES20.GL_COLOR_BUFFER_BIT);
             android.opengl.GLES20.glUseProgram(prog);
             android.opengl.GLES20.glEnable(android.opengl.GLES20.GL_BLEND);
