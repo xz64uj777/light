@@ -33,14 +33,16 @@ public class MainActivity extends Activity {
     Visualizer av;
     VizView viz;
     LinearLayout panel;
-    TextView song, time, queueInfo;
+    ScrollView controlScroll;
+    TextView song, time, queueInfo, audioStatus;
+    SeekBar intensitySeek;
     SeekBar seek;
     Button play, shuffle, repeat, preset, pandora, stopLink;
     boolean pandoraMode = false, externalPlaying = false;
     long lastSessionCheck = 0;
     int current = -1;
     boolean shuffleOn = false, repeatOn = false;
-    int presetId = 0;
+    int presetId = 0, paletteId = 0, speedId = 1;
 
     final Runnable clock = new Runnable() {
         public void run() {
@@ -114,6 +116,51 @@ public class MainActivity extends Activity {
         row3.addView(pandora, lp());
         row3.addView(stopLink, lp());
         panel.addView(row3);
+
+        LinearLayout row4 = new LinearLayout(this);
+        row4.setGravity(Gravity.CENTER);
+        Button colors = btn("COLOR: NEON");
+        Button speed = btn("SPEED 1x");
+        Button status = btn("AUDIO STATUS");
+        row4.addView(colors, lp());
+        row4.addView(speed, lp());
+        row4.addView(status, lp());
+        panel.addView(row4);
+
+        TextView intensityLabel = t("VISUAL INTENSITY", 10, 0xffbbbbc8);
+        panel.addView(intensityLabel);
+        intensitySeek = new SeekBar(this);
+        intensitySeek.setMax(200);
+        intensitySeek.setProgress(100);
+        panel.addView(intensitySeek);
+        intensitySeek.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            public void onStartTrackingTouch(SeekBar s) {}
+            public void onStopTrackingTouch(SeekBar s) {}
+            public void onProgressChanged(SeekBar s, int p, boolean u) {
+                viz.r.setIntensity(0.2f + p / 125.0f);
+            }
+        });
+        audioStatus = t("Audio link: not connected", 11, 0xffd8d8ed);
+        panel.addView(audioStatus);
+        colors.setOnClickListener(v -> {
+            paletteId = (paletteId + 1) % 5;
+            String[] names = {"NEON", "ICE", "SUNSET", "MATRIX", "VIOLET"};
+            colors.setText("COLOR: " + names[paletteId]);
+            viz.r.setPalette(paletteId);
+        });
+        speed.setOnClickListener(v -> {
+            speedId = speedId % 3 + 1;
+            speed.setText("SPEED " + speedId + "x");
+            viz.r.setSpeed(speedId);
+        });
+        status.setOnClickListener(v -> {
+            String s = captureActive ? (captureHasAudio ? "Audio capture is receiving sound. Bass/mid/high levels: "
+                    + String.format(Locale.US, "%.2f / %.2f / %.2f", captureBass, captureMid, captureHigh)
+                    : "Capture is on, but no audio samples are detected. Pandora/Android may block capture.")
+                    : "No live audio capture. Pandora playback-session detection is status only.";
+            audioStatus.setText(s);
+            Toast.makeText(this, s, Toast.LENGTH_LONG).show();
+        });
         stopLink.setEnabled(captureActive);
         pandora.setOnClickListener(v -> connectPandora());
         stopLink.setOnClickListener(v -> {
@@ -143,9 +190,21 @@ public class MainActivity extends Activity {
         });
         full.setOnClickListener(v -> panel.setVisibility(panel.getVisibility() == View.VISIBLE ? View.GONE : View.VISIBLE));
 
+        controlScroll = new ScrollView(this);
+        controlScroll.setFillViewport(false);
+        controlScroll.setClipToPadding(false);
+        controlScroll.setVerticalScrollBarEnabled(false);
+        controlScroll.addView(panel, new ScrollView.LayoutParams(-1, -2));
         FrameLayout.LayoutParams pp = new FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM);
-        pp.setMargins(d(6), 0, d(6), d(6));
-        root.addView(panel, pp);
+        pp.setMargins(d(6), 0, d(6), d(12));
+        controlScroll.setBackgroundColor(Color.TRANSPARENT);
+        root.addView(controlScroll, pp);
+        root.setOnApplyWindowInsetsListener((view, insets) -> {
+            FrameLayout.LayoutParams p = (FrameLayout.LayoutParams) controlScroll.getLayoutParams();
+            p.bottomMargin = Math.max(d(12), insets.getSystemWindowInsetBottom() + d(8));
+            controlScroll.setLayoutParams(p);
+            return view.onApplyWindowInsets(insets);
+        });
 
         TextView tag = t("LIVE • 3D AUDIO REACTIVE", 11, 0xffeeeeff);
         tag.setGravity(Gravity.CENTER);
@@ -462,11 +521,16 @@ public class MainActivity extends Activity {
 
     static class RenderEngine implements android.opengl.GLSurfaceView.Renderer {
         float bass, mid, high, energy; long start; int prog, pos, col, preset = 0;
+        float intensity = 1f, speed = 1f;
+        int palette = 0;
         boolean externalPlayback = false;
         boolean audioAvailable = true;
         final Random random = new Random(7);
 
         void setPreset(int p) { preset = p; }
+        void setIntensity(float v) { intensity = Math.max(.2f, Math.min(1.8f, v)); }
+        void setSpeed(int v) { speed = v; }
+        void setPalette(int v) { palette = v; }
         void setExternalPlayback(boolean playing) { externalPlayback = playing; }
         void setAudioAvailable(boolean ok) { audioAvailable = ok; }
         void reset() { bass = mid = high = energy = 0; }
@@ -503,7 +567,7 @@ public class MainActivity extends Activity {
         int sh(int type,String s){int x=android.opengl.GLES20.glCreateShader(type);android.opengl.GLES20.glShaderSource(x,s);android.opengl.GLES20.glCompileShader(x);return x;}
         public void onSurfaceChanged(javax.microedition.khronos.opengles.GL10 g,int w,int h){android.opengl.GLES20.glViewport(0,0,w,h);}
         public void onDrawFrame(javax.microedition.khronos.opengles.GL10 g){
-            float t=(System.nanoTime()-start)/1e9f;
+            float t=(System.nanoTime()-start)/1e9f * speed;
             if (captureActive && captureHasAudio) {
                 bass = captureBass; mid = captureMid; high = captureHigh;
             } else if (externalPlayback || captureActive) {
@@ -511,8 +575,13 @@ public class MainActivity extends Activity {
                 mid = .12f + .20f * ((float)Math.sin(t * 2.7f + 1.2f) + 1f) * .5f;
                 high = .10f + .28f * ((float)Math.sin(t * 7.1f + .6f) + 1f) * .5f;
             }
+            bass = Math.min(1f, bass * intensity); mid = Math.min(1f, mid * intensity); high = Math.min(1f, high * intensity);
             float beat=Math.min(1,bass*2.8f);
-            android.opengl.GLES20.glClearColor(.003f+.028f*high,.002f+.02f*mid,.012f+.055f*bass,1);
+            if (palette == 0) android.opengl.GLES20.glClearColor(.003f+.028f*high,.002f+.02f*mid,.012f+.055f*bass,1);
+            else if (palette == 1) android.opengl.GLES20.glClearColor(.002f+.015f*high,.01f+.035f*mid,.025f+.07f*bass,1);
+            else if (palette == 2) android.opengl.GLES20.glClearColor(.04f+.07f*bass,.005f+.018f*mid,.001f+.012f*high,1);
+            else if (palette == 3) android.opengl.GLES20.glClearColor(.001f+.012f*high,.02f+.06f*bass,.002f+.025f*mid,1);
+            else android.opengl.GLES20.glClearColor(.02f+.045f*high,.002f+.012f*mid,.035f+.07f*bass,1);
             android.opengl.GLES20.glClear(android.opengl.GLES20.GL_COLOR_BUFFER_BIT);
             android.opengl.GLES20.glUseProgram(prog);
             android.opengl.GLES20.glEnable(android.opengl.GLES20.GL_BLEND);
